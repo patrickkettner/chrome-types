@@ -30,6 +30,7 @@ export class RenderContext {
 
   /** @type {string[]} */
   #knownNamespaces;
+  #lenient;
 
   /** @type {((id: string) => number) | null} */
   #sinceFloor = null;
@@ -56,13 +57,18 @@ export class RenderContext {
   };
 
   /**
+   * The lenient option renders a type the tool does not know as `unknown`, for the schemas of
+   * old releases.
+   *
    * @param {overrideTypes.RenderOverride} override
+   * @param {{lenient?: boolean}} options
    */
-  constructor(override) {
+  constructor(override, { lenient = false } = {}) {
     this.#override = override;
+    this.#lenient = lenient;
 
     const isVisible = override.isVisible.bind(override);
-    this.#t = new TraverseContext(isVisible);
+    this.#t = new TraverseContext(isVisible, { lenient });
     this.#knownNamespaces = readFileSync("tools/lib/known-namespaces.txt").toString("utf8").split("\n");
   }
 
@@ -739,6 +745,10 @@ export class RenderContext {
         return spec.type;
     }
 
+    if (this.#lenient) {
+      log.warn(`Rendering unsupported type as unknown: ${JSON.stringify(spec)}`);
+      return 'unknown';
+    }
     throw new Error(`unsupported type: ${JSON.stringify(spec)}`);
   }
 

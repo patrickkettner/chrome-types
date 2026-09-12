@@ -22,6 +22,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { readFromCache, writeToCache } from './cache-helper.js';
+import log from 'fancy-log';
 
 
 const execFile = promisify(childProcess.execFile);
@@ -65,7 +66,13 @@ export async function convertFromIdl(root, filename) {
 
   for (const binary of pythonBinary) {
     try {
-      const { stdout } = await execFile(binary, args, { cwd: root });
+      let { stdout } = await execFile(binary, args, { cwd: root });
+      // Old revisions of the compiler print a warning line before the JSON.
+      const jsonStart = Math.max(0, stdout.search(/^[\[{]/m));
+      if (jsonStart > 0) {
+        log.warn(`Discarding output before JSON in ${filename}: ${stdout.slice(0, jsonStart).trim()}`);
+        stdout = stdout.slice(jsonStart);
+      }
 
       // Ensure that we don't have any invalid JSON here by converting back to an object.
       const o = JSON5.parse(stdout);

@@ -43,11 +43,14 @@ function urlFor(revision, chromePath) {
  * @param {string} targetPath target work folder to extract to
  * @param {string[]} chromePaths chrome subtree paths to fetch
  * @param {string} revision revision to fetch
+ * @param {string[]} optionalChromePaths paths that may be absent
  * @return {Promise<(string[]?)[]>} files written for paths, null for skipped
  */
-export async function fetchAllTo(targetPath, chromePaths, revision) {
+export async function fetchAllTo(targetPath, chromePaths, revision, optionalChromePaths = []) {
   // This removes any trailing "/" from the paths.
-  chromePaths = chromePaths.map(chromePath => path.join(chromePath, '.'));
+  const trim = (chromePath) => path.join(chromePath, '.');
+  chromePaths = chromePaths.map(trim);
+  const optionalPaths = new Set(optionalChromePaths.map(trim));
 
   // Move the smaller paths first, so that we the following code can skip paths that we already
   // have (because the compressed version of a higher folder was fetched).
@@ -62,7 +65,7 @@ export async function fetchAllTo(targetPath, chromePaths, revision) {
     if (isSatisfied) {
       continue;  // we'll already have something for this
     }
-    requests.push(fetchTo(targetPath, chromePath, revision));
+    requests.push(fetchTo(targetPath, chromePath, revision, optionalPaths.has(chromePath)));
 
     // Small wait to attempt to avoid rate limiting.
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -75,24 +78,18 @@ export async function fetchAllTo(targetPath, chromePaths, revision) {
 /**
  * Fetch the specified part of the Chromium source tree into the target work path.
  *
- * Returns the number of files generated, or -1 if the file was missing.
- *
  * @param {string} targetPath target work folder to extract to
  * @param {string} chromePath chrome subtree path
  * @param {string} revision revision to fetch
- * @return {Promise<string[]>} files written
+ * @param {boolean} optional path may be absent
+ * @return {Promise<string[]>} files written, empty if absent
  */
-export async function fetchTo(targetPath, chromePath, revision) {
+export async function fetchTo(targetPath, chromePath, revision, optional = false) {
   const url = urlFor(revision, chromePath);
 
   const r = await fetch(url);
   if (!r.ok) {
-    // HACK: Old platform_apps folder is missing. Skip for now.
-    if (r.status === 400 && chromePath === 'chrome/common/apps/platform_apps/api') {
-      return [];
-    }
-    // HACK: New ChromeOS folder is missing. Skip for now.
-    if (r.status === 400 && chromePath === 'chromeos/ash/experiences/extensions/common/api') {
+    if (optional && (r.status === 400 || r.status === 404)) {
       return [];
     }
     throw new Error(`could not fetch URL from Chromium: ${url}, ${r.statusText} (${r.status})`);
